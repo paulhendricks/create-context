@@ -1,0 +1,9 @@
+[package]
+name = "create-context"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+glob = "0.3"

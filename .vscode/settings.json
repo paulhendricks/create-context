@@ -1,0 +1,30 @@
+{
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true,
+    "editor.inlayHints.enabled": "offUnlessPressed",
+    "format-comment.settings.maxLength": 80,
+    "rust-analyzer.inlayHints.typeHints.enable": true,
+    "rust-analyzer.inlayHints.closingBraceHints.minLines": 0,
+    "rust-analyzer.inlayHints.maxLength": 9999,
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml",
+
+    ],
+    "cSpell.words": [
+        "actix",
+        "combinators",
+        "llms",
+        "logits",
+        "logprobs",
+        "mistralai",
+        "nvapi",
+        "openai",
+        "reqwest",
+        "rustls",
+        "someapikey",
+        "thiserror",
+        "wiremock"
+    ],
+}

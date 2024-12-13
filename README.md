@@ -16,7 +16,7 @@ You need [Rust and Cargo](https://www.rust-lang.org/tools/install).
 To install this binary from source:
 
 ```bash
-git clone https://example.com/my_project.git
+git clone git@github.com:paulhendricks/create-context.git
 cd create-context
 cargo install --path .
 cargo run -- --dir . --pattern '**/*.rs'

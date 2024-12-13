@@ -33,7 +33,7 @@ fn determine_language(file_path: &str) -> String {
         .rsplit('.')
         .next()
         .and_then(|ext| extension_to_language.get(ext).cloned())
-        .unwrap_or_else(|| "".to_string()) // Default to no language if the extension is unrecognized
+        .unwrap_or_default() // Default to no language if the extension is unrecognized
 }
 
 fn main() -> io::Result<()> {

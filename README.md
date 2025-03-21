@@ -22,3 +22,9 @@ cargo install --path .
 cargo run -- --dir . --pattern '**/*.rs'
 create-context --dir . --pattern '**/*.rs'
 ```
+
+
+```bash
+rg zmq -l .
+rg zmq -l src | xargs create-context --dir . --files
+```

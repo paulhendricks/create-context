@@ -53,7 +53,7 @@ fn determine_language(file_path: &str) -> String {
     let extension_to_language: HashMap<&str, &str> = HashMap::from([
         ("rs", "rust"),
         ("zig", "zig"),
-        ("go", "golang"),
+        ("go", "go"),
         ("py", "python"),
         ("cpp", "cpp"),
         ("cc", "cpp"),

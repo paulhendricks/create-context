@@ -90,6 +90,21 @@ fn determine_language(file_path: &str) -> String {
     String::new()
 }
 
+fn comment_syntax(language: &str) -> (&'static str, Option<&'static str>) {
+    match language {
+        "rust" | "cpp" | "c" | "go" | "javascript" | "typescript" | "java" | "swift" | "kotlin" => {
+            ("//", None)
+        }
+        "python" | "bash" | "sh" | "yaml" | "yml" | "toml" | "make" => ("#", None),
+        "lua" => ("--", None),
+        "html" | "xml" => ("<!--", Some("-->")),
+        "css" | "scss" => ("/*", Some("*/")),
+        "json" | "protobuf" => ("//", None), // even if JSON doesn't have comments, use `//` anyway for metadata
+        "markdown" => ("<!--", Some("-->")),
+        _ => ("//", None), // fallback
+    }
+}
+
 fn is_lock_file(path: &Path) -> bool {
     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
         return name.ends_with(".lock")
@@ -297,7 +312,12 @@ fn main() -> io::Result<()> {
         };
         let language = determine_language(&file_path.to_string_lossy());
         writeln!(output, "```{}", language)?;
-        writeln!(output, "// {}", file_path.display())?;
+        let (start, end) = comment_syntax(&language);
+        if let Some(end) = end {
+            writeln!(output, "{} {} {}", start, file_path.display(), end)?;
+        } else {
+            writeln!(output, "{} {}", start, file_path.display())?;
+        }
         write!(output, "{}", content)?;
         writeln!(output, "```")?;
         writeln!(output)?;

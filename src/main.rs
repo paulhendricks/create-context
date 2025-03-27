@@ -33,38 +33,56 @@ struct Args {
 }
 
 fn determine_language(file_path: &str) -> String {
-    let extension_to_language: HashMap<String, String> = HashMap::from(
-        [
-            ("rs", "rust"),
-            ("zig", "zig"),
-            ("go", "golang"),
-            ("py", "python"),
-            ("cpp", "cpp"),
-            ("cc", "cpp"),
-            ("cxx", "cpp"),
-            ("hpp", "cpp"),
-            ("hh", "cpp"),
-            ("hxx", "cpp"),
-            ("c", "c"),
-            ("h", "c"),
-            ("cu", "cuda"),
-            ("cuh", "cuda"),
-            ("js", "javascript"),
-            ("ts", "typescript"),
-            ("toml", "toml"),
-            ("yaml", "yaml"),
-            ("json", "json"),
-            ("txt", "txt"),
-            ("sh", "bash"),
-        ]
-        .map(|(k, v)| (k.to_string(), v.to_string())),
-    );
+    let filename_to_language: HashMap<&str, &str> = HashMap::from([
+        ("Makefile", "make"),
+        ("CMakeLists.txt", "cmake"),
+        ("Dockerfile", "docker"),
+        (".gitignore", "git"),
+        ("build.gradle", "gradle"),
+        ("Cargo.toml", "rust"),
+        ("package.json", "node"),
+    ]);
 
-    file_path
-        .rsplit('.')
-        .next()
-        .and_then(|ext| extension_to_language.get(ext).cloned())
-        .unwrap_or_default()
+    let extension_to_language: HashMap<&str, &str> = HashMap::from([
+        ("rs", "rust"),
+        ("zig", "zig"),
+        ("go", "golang"),
+        ("py", "python"),
+        ("cpp", "cpp"),
+        ("cc", "cpp"),
+        ("cxx", "cpp"),
+        ("hpp", "cpp"),
+        ("hh", "cpp"),
+        ("hxx", "cpp"),
+        ("c", "c"),
+        ("h", "c"),
+        ("cu", "cuda"),
+        ("cuh", "cuda"),
+        ("js", "javascript"),
+        ("ts", "typescript"),
+        ("toml", "toml"),
+        ("yaml", "yaml"),
+        ("yml", "yaml"),
+        ("json", "json"),
+        ("txt", "txt"),
+        ("sh", "bash"),
+    ]);
+
+    let path = Path::new(file_path);
+
+    if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+        if let Some(lang) = filename_to_language.get(file_name) {
+            return lang.to_string();
+        }
+    }
+
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(lang) = extension_to_language.get(ext) {
+            return lang.to_string();
+        }
+    }
+
+    String::new()
 }
 
 fn is_lock_file(path: &Path) -> bool {
@@ -194,7 +212,7 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
     )?;
 
     println!("Directory Structure:\n");
-    println!("```text");
+    println!("```");
     for line in lines {
         println!("{line}");
     }

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::{self, DirEntry};
 use std::io::{self, Write};
 use std::path::Path;
+use tiktoken_rs::cl100k_base;
 
 /// CLI arguments
 #[derive(Parser, Debug)]
@@ -37,6 +38,9 @@ struct Args {
 
     #[arg(long, help = "Enable parallel processing of file contents")]
     parallel: bool,
+
+    #[arg(long, help = "Count and print the number of tokens in output")]
+    count_tokens: bool,
 }
 
 fn determine_language(file_path: &str) -> String {
@@ -270,6 +274,12 @@ fn process_file(file_path: &Path) -> Option<(String, String)> {
     Some((file_path.to_string_lossy().to_string(), buf))
 }
 
+/// Count tokens using the cl100k_base tokenizer (OpenAI GPT-4 / GPT-3.5)
+fn count_tokens(text: &str) -> usize {
+    let bpe = cl100k_base().expect("Failed to load tokenizer");
+    bpe.encode_with_special_tokens(text).len()
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let mut matched_files = Vec::new();
@@ -349,7 +359,13 @@ fn main() -> io::Result<()> {
         write!(final_output, "{}", chunk)?;
     }
 
-    io::stdout().write_all(&final_output)?;
+    if args.count_tokens {
+        let output_str = String::from_utf8_lossy(&final_output);
+        let token_count = count_tokens(&output_str);
+        eprintln!("Token count: {}", token_count);
+    } else {
+        io::stdout().write_all(&final_output)?;
+    }
 
     Ok(())
 }

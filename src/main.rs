@@ -10,11 +10,9 @@ use std::path::Path;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Directory to scan
     #[arg(long, short, default_value = ".")]
     dir: String,
 
-    /// Glob pattern to match files (e.g. "**/*.rs")
     #[arg(
         long,
         short,
@@ -24,7 +22,6 @@ struct Args {
     )]
     pattern: String,
 
-    /// List of specific files (space-separated)
     #[arg(
         long,
         short,
@@ -35,22 +32,26 @@ struct Args {
     files: Vec<String>,
 }
 
-/// Determine the language for the code fence based on the file extension
 fn determine_language(file_path: &str) -> String {
-    let extension_to_language: HashMap<String, String> = HashMap::from([
-        ("rs".to_string(), "rust".to_string()),
-        ("zig".to_string(), "zig".to_string()),
-        ("go".to_string(), "golang".to_string()),
-        ("py".to_string(), "python".to_string()),
-        ("cpp".to_string(), "cpp".to_string()),
-        ("hpp".to_string(), "cpp".to_string()),
-        ("c".to_string(), "c".to_string()),
-        ("h".to_string(), "c".to_string()),
-        ("js".to_string(), "javascript".to_string()),
-        ("ts".to_string(), "typescript".to_string()),
-        ("toml".to_string(), "toml".to_string()),
-        ("json".to_string(), "json".to_string()),
-    ]);
+    let extension_to_language: HashMap<String, String> = HashMap::from(
+        [
+            ("rs", "rust"),
+            ("zig", "zig"),
+            ("go", "golang"),
+            ("py", "python"),
+            ("cpp", "cpp"),
+            ("hpp", "cpp"),
+            ("c", "c"),
+            ("h", "c"),
+            ("cu", "cuda"),
+            ("cuh", "cuda"),
+            ("js", "javascript"),
+            ("ts", "typescript"),
+            ("toml", "toml"),
+            ("json", "json"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+    );
 
     file_path
         .rsplit('.')
@@ -59,7 +60,6 @@ fn determine_language(file_path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Return true if the file should be excluded as a lock file
 fn is_lock_file(path: &Path) -> bool {
     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
         return name.ends_with(".lock")
@@ -72,8 +72,7 @@ fn is_lock_file(path: &Path) -> bool {
     false
 }
 
-/// Return true if the file should be excluded (lock file or dotfile or parent dir is hidden)
-fn is_excluded(path: &Path) -> bool {
+fn is_excluded(path: &Path, base_dir: &Path) -> bool {
     if is_lock_file(path) {
         return true;
     }
@@ -88,44 +87,42 @@ fn is_excluded(path: &Path) -> bool {
         }
     }
 
-    false
+    is_ignored_by_gitignore(base_dir, path)
 }
 
-/// Check if a file is excluded by .gitignore using ignore::WalkBuilder
 fn is_ignored_by_gitignore(base_dir: &Path, file_path: &Path) -> bool {
     let parent = file_path.parent().unwrap_or(base_dir);
-    WalkBuilder::new(parent)
+    for entry in WalkBuilder::new(parent)
         .standard_filters(true)
         .follow_links(true)
         .build()
-        .for_each(|result| {
-            if let Ok(entry) = result {
-                if entry.path() == file_path {}
-            }
-        });
-    true // Didn't show up in walk = ignored
+        .flatten()
+    {
+        if entry.path() == file_path {
+            return false;
+        }
+    }
+    true
 }
 
-#[allow(dead_code)]
-fn is_hidden(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .is_some_and(|s| s.starts_with('.'))
+fn tree_entry_sort(a: &DirEntry, b: &DirEntry) -> std::cmp::Ordering {
+    let a_is_dir = a.path().is_dir();
+    let b_is_dir = b.path().is_dir();
+    match (a_is_dir, b_is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.file_name().cmp(&b.file_name()),
+    }
 }
 
-#[allow(dead_code)]
-fn is_excluded_dir(entry: &DirEntry) -> bool {
-    is_hidden(entry)
-}
-
-fn walk(
+fn walk_tree(
     dir: &Path,
     prefix: String,
     is_last: bool,
     dir_count: &mut usize,
     file_count: &mut usize,
     output: &mut Vec<String>,
+    root: &Path,
 ) -> io::Result<()> {
     let connector = if is_last { "└── " } else { "├── " };
     if prefix.is_empty() {
@@ -136,18 +133,10 @@ fn walk(
 
     let mut entries = fs::read_dir(dir)?
         .filter_map(Result::ok)
-        .filter(|e| !is_excluded(&e.path()))
+        .filter(|e| !is_excluded(&e.path(), root))
         .collect::<Vec<_>>();
 
-    entries.sort_by(|a, b| {
-        let a_is_dir = a.path().is_dir();
-        let b_is_dir = b.path().is_dir();
-        match (a_is_dir, b_is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.file_name().cmp(&b.file_name()),
-        }
-    });
+    entries.sort_by(tree_entry_sort);
 
     let len = entries.len();
     for (i, entry) in entries.into_iter().enumerate() {
@@ -157,13 +146,14 @@ fn walk(
 
         if path.is_dir() {
             *dir_count += 1;
-            walk(
+            walk_tree(
                 &path,
                 new_prefix,
                 is_last_entry,
                 dir_count,
                 file_count,
                 output,
+                root,
             )?;
         } else {
             *file_count += 1;
@@ -186,13 +176,14 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
     let mut dir_count = 1;
     let mut file_count = 0;
     let mut lines = Vec::new();
-    walk(
+    walk_tree(
         root,
         "".to_string(),
         true,
         &mut dir_count,
         &mut file_count,
         &mut lines,
+        root,
     )?;
 
     println!("Directory Structure:\n");
@@ -220,11 +211,7 @@ fn main() -> io::Result<()> {
                 continue;
             }
 
-            if is_excluded(&full_path) {
-                continue;
-            }
-
-            if is_ignored_by_gitignore(Path::new(&args.dir), &full_path) {
+            if is_excluded(&full_path, Path::new(&args.dir)) {
                 continue;
             }
 
@@ -251,7 +238,9 @@ fn main() -> io::Result<()> {
 
             let path = entry.path();
 
-            if entry.file_type().is_some_and(|ft| ft.is_file()) && !is_excluded(path) {
+            if entry.file_type().is_some_and(|ft| ft.is_file())
+                && !is_excluded(path, Path::new(&args.dir))
+            {
                 let relative_path = path.strip_prefix(&args.dir).unwrap_or(path);
                 let relative_path_str = relative_path.to_string_lossy();
                 if pattern.matches(&relative_path_str) {
@@ -263,9 +252,8 @@ fn main() -> io::Result<()> {
 
     matched_files.sort();
 
-    // Output directory tree before showing file contents
     print_tree_structure(Path::new(&args.dir))?;
-    println!(); // spacing between tree and contents
+    println!();
 
     let mut output = Vec::new();
 

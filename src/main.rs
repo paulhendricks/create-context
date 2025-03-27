@@ -40,7 +40,11 @@ fn determine_language(file_path: &str) -> String {
             ("go", "golang"),
             ("py", "python"),
             ("cpp", "cpp"),
+            ("cc", "cpp"),
+            ("cxx", "cpp"),
             ("hpp", "cpp"),
+            ("hh", "cpp"),
+            ("hxx", "cpp"),
             ("c", "c"),
             ("h", "c"),
             ("cu", "cuda"),
@@ -48,7 +52,10 @@ fn determine_language(file_path: &str) -> String {
             ("js", "javascript"),
             ("ts", "typescript"),
             ("toml", "toml"),
+            ("yaml", "yaml"),
             ("json", "json"),
+            ("txt", "txt"),
+            ("sh", "bash"),
         ]
         .map(|(k, v)| (k.to_string(), v.to_string())),
     );

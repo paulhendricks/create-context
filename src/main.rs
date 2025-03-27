@@ -2,9 +2,9 @@ use clap::Parser;
 use glob::Pattern;
 use ignore::WalkBuilder;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, DirEntry};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// CLI arguments
 #[derive(Parser, Debug)]
@@ -39,11 +39,17 @@ struct Args {
 fn determine_language(file_path: &str) -> String {
     let extension_to_language: HashMap<String, String> = HashMap::from([
         ("rs".to_string(), "rust".to_string()),
+        ("zig".to_string(), "zig".to_string()),
         ("go".to_string(), "golang".to_string()),
         ("py".to_string(), "python".to_string()),
         ("cpp".to_string(), "cpp".to_string()),
+        ("hpp".to_string(), "cpp".to_string()),
         ("c".to_string(), "c".to_string()),
+        ("h".to_string(), "c".to_string()),
+        ("js".to_string(), "javascript".to_string()),
         ("ts".to_string(), "typescript".to_string()),
+        ("toml".to_string(), "toml".to_string()),
+        ("json".to_string(), "json".to_string()),
     ]);
 
     file_path
@@ -88,18 +94,116 @@ fn is_excluded(path: &Path) -> bool {
 /// Check if a file is excluded by .gitignore using ignore::WalkBuilder
 fn is_ignored_by_gitignore(base_dir: &Path, file_path: &Path) -> bool {
     let parent = file_path.parent().unwrap_or(base_dir);
-    for result in WalkBuilder::new(parent)
+    WalkBuilder::new(parent)
         .standard_filters(true)
         .follow_links(true)
         .build()
-    {
-        if let Ok(entry) = result {
-            if entry.path() == file_path {
-                return false;
+        .for_each(|result| {
+            if let Ok(entry) = result {
+                if entry.path() == file_path {}
             }
+        });
+    true // Didn't show up in walk = ignored
+}
+
+#[allow(dead_code)]
+fn is_hidden(entry: &DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .is_some_and(|s| s.starts_with('.'))
+}
+
+#[allow(dead_code)]
+fn is_excluded_dir(entry: &DirEntry) -> bool {
+    is_hidden(entry)
+}
+
+fn walk(
+    dir: &Path,
+    prefix: String,
+    is_last: bool,
+    dir_count: &mut usize,
+    file_count: &mut usize,
+    output: &mut Vec<String>,
+) -> io::Result<()> {
+    let connector = if is_last { "└── " } else { "├── " };
+    if prefix.is_empty() {
+        output.push(".".to_string());
+    } else if let Some(name) = dir.file_name() {
+        output.push(format!("{prefix}{connector}{}", name.to_string_lossy()));
+    }
+
+    let mut entries = fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .filter(|e| !is_excluded(&e.path()))
+        .collect::<Vec<_>>();
+
+    entries.sort_by(|a, b| {
+        let a_is_dir = a.path().is_dir();
+        let b_is_dir = b.path().is_dir();
+        match (a_is_dir, b_is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.file_name().cmp(&b.file_name()),
+        }
+    });
+
+    let len = entries.len();
+    for (i, entry) in entries.into_iter().enumerate() {
+        let path = entry.path();
+        let is_last_entry = i == len - 1;
+        let new_prefix = format!("{prefix}{}", if is_last { "    " } else { "│   " });
+
+        if path.is_dir() {
+            *dir_count += 1;
+            walk(
+                &path,
+                new_prefix,
+                is_last_entry,
+                dir_count,
+                file_count,
+                output,
+            )?;
+        } else {
+            *file_count += 1;
+            let conn = if is_last_entry {
+                "└── "
+            } else {
+                "├── "
+            };
+            output.push(format!(
+                "{new_prefix}{conn}{}",
+                entry.file_name().to_string_lossy()
+            ));
         }
     }
-    true // Didn't show up in walk = ignored
+
+    Ok(())
+}
+
+fn print_tree_structure(root: &Path) -> io::Result<()> {
+    let mut dir_count = 1;
+    let mut file_count = 0;
+    let mut lines = Vec::new();
+    walk(
+        root,
+        "".to_string(),
+        true,
+        &mut dir_count,
+        &mut file_count,
+        &mut lines,
+    )?;
+
+    println!("Directory Structure:\n");
+    println!("```text");
+    for line in lines {
+        println!("{line}");
+    }
+    println!("\n{} directories, {} files", dir_count, file_count);
+    println!("```");
+
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
@@ -147,7 +251,7 @@ fn main() -> io::Result<()> {
 
             let path = entry.path();
 
-            if entry.file_type().map_or(false, |ft| ft.is_file()) && !is_excluded(path) {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) && !is_excluded(path) {
                 let relative_path = path.strip_prefix(&args.dir).unwrap_or(path);
                 let relative_path_str = relative_path.to_string_lossy();
                 if pattern.matches(&relative_path_str) {
@@ -158,6 +262,10 @@ fn main() -> io::Result<()> {
     }
 
     matched_files.sort();
+
+    // Output directory tree before showing file contents
+    print_tree_structure(Path::new(&args.dir))?;
+    println!(); // spacing between tree and contents
 
     let mut output = Vec::new();
 

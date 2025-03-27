@@ -66,6 +66,11 @@ fn determine_language(file_path: &str) -> String {
         ("json", "json"),
         ("txt", "txt"),
         ("sh", "bash"),
+        ("md", "markdown"),
+        ("proto", "protobuf"),
+        ("cmake", "cmake"),
+        ("html", "html"),
+        ("css", "css"),
     ]);
 
     let path = Path::new(file_path);
@@ -212,7 +217,7 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
     )?;
 
     println!("Directory Structure:\n");
-    println!("```");
+    println!("```text");
     for line in lines {
         println!("{line}");
     }

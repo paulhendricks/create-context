@@ -31,6 +31,12 @@ struct Args {
         help = "List of specific files (space-separated)"
     )]
     files: Vec<String>,
+
+    #[arg(long, help = "Disable printing of directory tree structure")]
+    no_tree: bool,
+
+    #[arg(long, help = "Enable parallel processing of file contents")]
+    parallel: bool,
 }
 
 fn determine_language(file_path: &str) -> String {
@@ -243,6 +249,26 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn process_file(file_path: &Path) -> Option<(String, String)> {
+    let content = fs::read_to_string(file_path).ok()?;
+    let language = determine_language(&file_path.to_string_lossy());
+    let (start, end) = comment_syntax(&language);
+    let mut buf = String::new();
+    use std::fmt::Write;
+
+    writeln!(buf, "```{}", language).ok()?;
+    if let Some(end) = end {
+        writeln!(buf, "{} {} {}", start, file_path.display(), end).ok()?;
+    } else {
+        writeln!(buf, "{} {}", start, file_path.display()).ok()?;
+    }
+    write!(buf, "{}", content).ok()?;
+    writeln!(buf, "```").ok()?;
+    writeln!(buf).ok()?;
+
+    Some((file_path.to_string_lossy().to_string(), buf))
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let mut matched_files = Vec::new();
@@ -297,31 +323,22 @@ fn main() -> io::Result<()> {
 
     matched_files.sort();
 
-    print_tree_structure(Path::new(&args.dir))?;
-    println!();
+    if !args.no_tree {
+        print_tree_structure(Path::new(&args.dir))?;
+        println!();
+    }
 
-    let outputs: Vec<(String, String)> = matched_files
-        .par_iter()
-        .filter_map(|file_path| {
-            let content = fs::read_to_string(file_path).ok()?;
-            let language = determine_language(&file_path.to_string_lossy());
-            let (start, end) = comment_syntax(&language);
-            let mut buf = String::new();
-            use std::fmt::Write;
-
-            writeln!(buf, "```{}", language).ok()?;
-            if let Some(end) = end {
-                writeln!(buf, "{} {} {}", start, file_path.display(), end).ok()?;
-            } else {
-                writeln!(buf, "{} {}", start, file_path.display()).ok()?;
-            }
-            write!(buf, "{}", content).ok()?;
-            writeln!(buf, "```").ok()?;
-            writeln!(buf).ok()?;
-
-            Some((file_path.to_string_lossy().to_string(), buf))
-        })
-        .collect();
+    let outputs: Vec<(String, String)> = if args.parallel {
+        matched_files
+            .par_iter()
+            .filter_map(|file_path| process_file(file_path))
+            .collect()
+    } else {
+        matched_files
+            .iter()
+            .filter_map(|file_path| process_file(file_path))
+            .collect()
+    };
 
     let mut outputs = outputs;
     outputs.sort_by(|a, b| a.0.cmp(&b.0));

@@ -1,6 +1,7 @@
 use clap::Parser;
 use glob::Pattern;
 use ignore::WalkBuilder;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::{self, DirEntry};
 use std::io::{self, Write};
@@ -99,9 +100,9 @@ fn comment_syntax(language: &str) -> (&'static str, Option<&'static str>) {
         "lua" => ("--", None),
         "html" | "xml" => ("<!--", Some("-->")),
         "css" | "scss" => ("/*", Some("*/")),
-        "json" | "protobuf" => ("//", None), // even if JSON doesn't have comments, use `//` anyway for metadata
+        "json" | "protobuf" => ("//", None),
         "markdown" => ("<!--", Some("-->")),
-        _ => ("//", None), // fallback
+        _ => ("//", None),
     }
 }
 
@@ -244,7 +245,6 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
-
     let mut matched_files = Vec::new();
 
     if !args.files.is_empty() {
@@ -300,30 +300,38 @@ fn main() -> io::Result<()> {
     print_tree_structure(Path::new(&args.dir))?;
     println!();
 
-    let mut output = Vec::new();
+    let outputs: Vec<(String, String)> = matched_files
+        .par_iter()
+        .filter_map(|file_path| {
+            let content = fs::read_to_string(file_path).ok()?;
+            let language = determine_language(&file_path.to_string_lossy());
+            let (start, end) = comment_syntax(&language);
+            let mut buf = String::new();
+            use std::fmt::Write;
 
-    for file_path in &matched_files {
-        let content = match fs::read_to_string(file_path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Error reading file '{}': {}", file_path.display(), e);
-                continue;
+            writeln!(buf, "```{}", language).ok()?;
+            if let Some(end) = end {
+                writeln!(buf, "{} {} {}", start, file_path.display(), end).ok()?;
+            } else {
+                writeln!(buf, "{} {}", start, file_path.display()).ok()?;
             }
-        };
-        let language = determine_language(&file_path.to_string_lossy());
-        writeln!(output, "```{}", language)?;
-        let (start, end) = comment_syntax(&language);
-        if let Some(end) = end {
-            writeln!(output, "{} {} {}", start, file_path.display(), end)?;
-        } else {
-            writeln!(output, "{} {}", start, file_path.display())?;
-        }
-        write!(output, "{}", content)?;
-        writeln!(output, "```")?;
-        writeln!(output)?;
+            write!(buf, "{}", content).ok()?;
+            writeln!(buf, "```").ok()?;
+            writeln!(buf).ok()?;
+
+            Some((file_path.to_string_lossy().to_string(), buf))
+        })
+        .collect();
+
+    let mut outputs = outputs;
+    outputs.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut final_output = Vec::new();
+    for (_, chunk) in outputs {
+        write!(final_output, "{}", chunk)?;
     }
 
-    io::stdout().write_all(&output)?;
+    io::stdout().write_all(&final_output)?;
 
     Ok(())
 }

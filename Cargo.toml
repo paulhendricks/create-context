@@ -8,3 +8,4 @@ clap = { version = "4", features = ["derive"] }
 walkdir = "2"
 glob = "0.3"
 ignore = "0.4.23"
+rayon = "1.10.0"

@@ -1,3 +1,4 @@
+// ./src/main.rs
 use clap::Parser;
 use glob::Pattern;
 use ignore::WalkBuilder;
@@ -41,6 +42,9 @@ struct Args {
 
     #[arg(long, help = "Count and print the number of tokens in output")]
     count_tokens: bool,
+
+    #[arg(long, help = "Ignore Rust test files and strip test modules")]
+    ignore_tests: bool,
 }
 
 fn determine_language(file_path: &str) -> String {
@@ -254,9 +258,95 @@ fn print_tree_structure(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn process_file(file_path: &Path) -> Option<(String, String)> {
-    let content = fs::read_to_string(file_path).ok()?;
+/// Determines if a given path corresponds to a Rust test file.
+/// This checks for:
+/// - Any `.rs` file inside a directory named `tests`
+/// - Filenames ending with `_test.rs`
+/// - Filenames equal to `tests.rs`
+fn is_rust_test_file(path: &Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if ext == "rs" {
+            if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+                if file_name.ends_with("_test.rs") || file_name == "tests.rs" {
+                    return true;
+                }
+            }
+            for component in path.components() {
+                if let std::path::Component::Normal(part) = component {
+                    if part == "tests" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Strips out any `#[cfg(test)] mod tests { ... }` blocks from the given Rust source.
+fn strip_rust_tests(s: &str) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+    let len = s.len();
+    while i < len {
+        if s[i..].starts_with("#[cfg(test)]") {
+            // Look for the following `mod tests`
+            if let Some(mod_pos) = s[i..].find("mod tests") {
+                // Find the `{` after `mod tests`
+                if let Some(brace_offset) = s[i + mod_pos..].find('{') {
+                    let start_brace = i + mod_pos + brace_offset;
+                    // Now find the matching closing brace
+                    let mut depth = 1;
+                    let mut j = start_brace + 1;
+                    while j < len {
+                        let ch = s[j..].chars().next().unwrap();
+                        match ch {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    j += ch.len_utf8();
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        j += ch.len_utf8();
+                    }
+                    i = j;
+                    continue;
+                } else {
+                    // No opening brace found; skip the marker length and continue
+                    i += "#[cfg(test)]".len();
+                    continue;
+                }
+            } else {
+                // No `mod tests` after `#[cfg(test)]`; skip the marker and continue
+                i += "#[cfg(test)]".len();
+                continue;
+            }
+        } else {
+            let ch = s[i..].chars().next().unwrap();
+            result.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    // Append any remainder
+    if i < len {
+        result.push_str(&s[i..]);
+    }
+    result
+}
+
+fn process_file(file_path: &Path, ignore_tests: bool) -> Option<(String, String)> {
+    let mut content = fs::read_to_string(file_path).ok()?;
     let language = determine_language(&file_path.to_string_lossy());
+
+    // If ignoring tests and this is a Rust file, strip out test modules
+    if ignore_tests && language == "rust" {
+        content = strip_rust_tests(&content);
+    }
+
     let (start, end) = comment_syntax(&language);
     let mut buf = String::new();
     use std::fmt::Write;
@@ -283,6 +373,7 @@ fn count_tokens(text: &str) -> usize {
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let mut matched_files = Vec::new();
+    let ignore = args.ignore_tests;
 
     if !args.files.is_empty() {
         for file in &args.files {
@@ -294,6 +385,10 @@ fn main() -> io::Result<()> {
             }
 
             if is_excluded(&full_path, Path::new(&args.dir)) {
+                continue;
+            }
+
+            if ignore && is_rust_test_file(&full_path) {
                 continue;
             }
 
@@ -323,6 +418,10 @@ fn main() -> io::Result<()> {
             if entry.file_type().is_some_and(|ft| ft.is_file())
                 && !is_excluded(path, Path::new(&args.dir))
             {
+                if ignore && is_rust_test_file(path) {
+                    continue;
+                }
+
                 let relative_path = path.strip_prefix(&args.dir).unwrap_or(path);
                 let relative_path_str = relative_path.to_string_lossy();
                 if pattern.matches(&relative_path_str) {
@@ -342,12 +441,12 @@ fn main() -> io::Result<()> {
     let outputs: Vec<(String, String)> = if args.parallel {
         matched_files
             .par_iter()
-            .filter_map(|file_path| process_file(file_path))
+            .filter_map(|file_path| process_file(file_path, ignore))
             .collect()
     } else {
         matched_files
             .iter()
-            .filter_map(|file_path| process_file(file_path))
+            .filter_map(|file_path| process_file(file_path, ignore))
             .collect()
     };
 
@@ -368,4 +467,13 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_foobarg() {
+        assert!("FOOBAR" == "foobar".to_uppercase());
+    }
 }

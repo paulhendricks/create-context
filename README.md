@@ -23,6 +23,29 @@ cargo run -- --dir . --pattern '**/*.rs'
 create-context --dir . --pattern '**/*.rs'
 ```
 
+## Output
+
+```bash
+$ create-context --pattern "**/*" --dir ./examples --ignore-tests
+```
+
+
+Directory Structure:
+
+```text
+.
+    └── example.rs
+
+1 directories, 1 files
+```
+
+```rust
+// ./examples/example.rs
+fn main() {
+    println!("Hello world!");
+}
+```
+
 
 ```bash
 rg zmq -l .

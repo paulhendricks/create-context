@@ -19,17 +19,18 @@ struct Args {
     #[arg(
         long,
         short,
-        default_value = "**/*",
+        num_args = 1..,
+        value_name = "GLOB",
         conflicts_with = "files",
-        help = "Glob pattern to match files (e.g. \"**/*.rs\")"
+        help = "Glob patterns to match (can be used multiple times)"
     )]
-    pattern: String,
+    patterns: Vec<String>,
 
     #[arg(
         long,
         short,
         num_args = 1..,
-        conflicts_with = "pattern",
+        conflicts_with = "patterns",
         help = "List of specific files (space-separated)"
     )]
     files: Vec<String>,
@@ -395,10 +396,17 @@ fn main() -> io::Result<()> {
             matched_files.push(full_path);
         }
     } else {
-        let pattern = Pattern::new(&args.pattern).unwrap_or_else(|e| {
-            eprintln!("Invalid glob pattern: {e}");
-            std::process::exit(1);
-        });
+        let patterns: Vec<Pattern> = args
+            .patterns
+            .iter()
+            .filter_map(|p| match Pattern::new(p) {
+                Ok(pat) => Some(pat),
+                Err(e) => {
+                    eprintln!("Invalid glob pattern '{}': {}", p, e);
+                    None
+                }
+            })
+            .collect();
 
         for result in WalkBuilder::new(&args.dir)
             .follow_links(true)
@@ -424,7 +432,7 @@ fn main() -> io::Result<()> {
 
                 let relative_path = path.strip_prefix(&args.dir).unwrap_or(path);
                 let relative_path_str = relative_path.to_string_lossy();
-                if pattern.matches(&relative_path_str) {
+                if patterns.iter().any(|pat| pat.matches(&relative_path_str)) {
                     matched_files.push(path.to_path_buf());
                 }
             }

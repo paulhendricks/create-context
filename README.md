@@ -19,14 +19,14 @@ To install this binary from source:
 git clone git@github.com:paulhendricks/create-context.git
 cd create-context
 cargo install --path .
-cargo run -- --dir . --pattern '**/*.rs'
-create-context --dir . --pattern '**/*.rs'
+cargo run -- --dir . --patterns '**/*.rs'
+create-context --dir . --patterns '**/*.rs'
 ```
 
 ## Output
 
 ```bash
-$ create-context --pattern "**/*" --dir ./examples --ignore-tests
+$ create-context --patterns "**/*" --dir ./examples --ignore-tests
 ```
 
 
